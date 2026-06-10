@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>ドット絵コンバーター</title>
+<style>
+  :root {
+    --bg: #f2f2f7;
+    --card: #ffffff;
+    --blue: #007aff;
+    --label: #1c1c1e;
+    --secondary-label: #8e8e93;
+    --separator: rgba(60,60,67,0.16);
+    --fill: rgba(120,120,128,0.16);
+    --fill-strong: rgba(120,120,128,0.24);
+    --radius-lg: 20px;
+    --radius-md: 14px;
+    --radius-sm: 10px;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Hiragino Kaku Gothic ProN", "Hiragino Sans", sans-serif;
+    background: var(--bg);
+    color: var(--label);
+    padding: 20px 16px calc(40px + var(--safe-bottom));
+    -webkit-font-smoothing: antialiased;
+  }
+  h1 {
+    text-align: center;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 6px 0 4px;
+  }
+  p.sub {
+    text-align: center;
+    font-size: 14px;
+    color: var(--secondary-label);
+    margin: 0 0 22px;
+    line-height: 1.5;
+  }
+  .wrap {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  /* ---- iOS風カード ---- */
+  .card {
+    background: var(--card);
+    border-radius: var(--radius-lg);
+    padding: 18px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.04);
+  }
+  .card h2 {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--secondary-label);
+    margin: 0 0 14px;
+    text-align: center;
+  }
+
+  /* ---- ドロップゾーン(タップでファイル選択) ---- */
+  .dropzone {
+    border: 2px dashed var(--separator);
+    border-radius: var(--radius-lg);
+    background: var(--card);
+    padding: 44px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+  }
+  .dropzone:active { transform: scale(0.99); }
+  .dropzone.drag { border-color: var(--blue); background: rgba(0,122,255,0.06); }
+  .dropzone p { margin: 6px 0; }
+  .dropzone .big { font-size: 17px; font-weight: 600; }
+  .dropzone .small { font-size: 13px; color: var(--secondary-label); }
+  input[type=file] { display: none; }
+
+  .stage { display: none; }
+  .stage.show { display: block; }
+
+  canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    border-radius: var(--radius-md);
+    background:
+      repeating-conic-gradient(#eceaf0 0% 25%, #fbfbfd 0% 50%) 50% / 16px 16px;
+    width: 100%;
+    height: auto;
+    display: block;
+    touch-action: none;
+  }
+  #origCanvas { cursor: grab; }
+  #origCanvas.dragging { cursor: grabbing; }
+
+  /* ---- iOSスタイルのスライダー行 ---- */
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 4px;
+  }
+  .row + .row { border-top: 0.5px solid var(--separator); }
+  .row .row-label {
+    font-size: 15px;
+    flex: 0 0 86px;
+    color: var(--label);
+  }
+  .row .val {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--secondary-label);
+    flex: 0 0 44px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* iOS風スライダー */
+  input[type=range] {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--fill-strong);
+    outline: none;
+    margin: 0;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 27px;
+    height: 27px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.18), 0 0 0 0.5px rgba(0,0,0,0.05);
+    cursor: pointer;
+    margin-top: -11.5px;
+  }
+  input[type=range]::-moz-range-track {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--fill-strong);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 27px;
+    height: 27px;
+    border: none;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.18), 0 0 0 0.5px rgba(0,0,0,0.05);
+    cursor: pointer;
+  }
+
+  .hint {
+    font-size: 12.5px;
+    color: var(--secondary-label);
+    text-align: center;
+    margin: 12px 0 0;
+    line-height: 1.5;
+  }
+
+  /* ---- iOS風ボタン ---- */
+  .btn-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  button.btn {
+    -webkit-appearance: none;
+    appearance: none;
+    border: none;
+    border-radius: var(--radius-md);
+    padding: 15px 20px;
+    font-size: 16px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: opacity 0.1s ease, transform 0.08s ease;
+    width: 100%;
+  }
+  button.btn:active { transform: scale(0.98); opacity: 0.85; }
+  button.btn.primary { background: var(--blue); color: #ffffff; }
+  button.btn.secondary { background: var(--fill); color: var(--blue); }
+  button.btn.plain {
+    background: transparent;
+    color: var(--blue);
+    font-weight: 500;
+    padding: 12px 20px;
+  }
+
+  /* ---- カラーパレット ---- */
+  .palette {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    margin-top: 16px;
+  }
+  .palette .sw {
+    width: 24px; height: 24px;
+    border-radius: 8px;
+    box-shadow: 0 0 0 0.5px rgba(0,0,0,0.08) inset;
+  }
+  .meta {
+    font-size: 12.5px;
+    color: var(--secondary-label);
+    text-align: center;
+    margin-top: 10px;
+  }
+
+  /* ---- レスポンシブ(スマホ) ---- */
+  @media (max-width: 480px) {
+    body { padding: 14px 12px calc(32px + var(--safe-bottom)); }
+    h1 { font-size: 20px; }
+    .card { padding: 14px; border-radius: 18px; }
+    .dropzone { padding: 34px 14px; }
+    .row .row-label { flex-basis: 72px; font-size: 14px; }
+    button.btn { padding: 14px 18px; font-size: 15.5px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ドット絵コンバーター</h1>
+  <p class="sub">写真をアップロードして、構図を選び、お気に入りのドット絵に変換しましょう。</p>
+
+  <label class="dropzone" id="dropzone" for="fileInput">
+    <p class="big">📷 タップして写真を選択</p>
+    <p class="small">写真アプリ・カメラから選べます(PCではドラッグ&amp;ドロップにも対応)</p>
+    <input type="file" id="fileInput" accept="image/*">
+  </label>
+
+  <div class="stage" id="stage">
+
+    <div class="card">
+      <h2>① 構図を選ぶ</h2>
+      <canvas id="origCanvas" width="320" height="320"></canvas>
+      <div class="row">
+        <span class="row-label">切り抜き</span>
+        <input type="range" id="cropSize" min="20" max="100" value="100" step="1">
+        <span class="val" id="cropSizeVal">100%</span>
+      </div>
+      <p class="hint">正方形の枠をドラッグ(指でも操作できます)して位置を調整できます</p>
+    </div>
+
+    <div class="card">
+      <h2>② プレビュー</h2>
+      <canvas id="pixelPreview" width="320" height="320"></canvas>
+      <div class="row">
+        <span class="row-label">色数</span>
+        <input type="range" id="colorCount" min="2" max="64" value="24" step="1">
+        <span class="val" id="colorCountVal">24</span>
+      </div>
+      <div class="row">
+        <span class="row-label">サイズ</span>
+        <input type="range" id="pixelSize" min="16" max="128" value="32" step="8">
+        <span class="val" id="pixelSizeVal">32</span>
+      </div>
+
+      <div class="palette" id="palette"></div>
+      <p class="meta" id="meta"></p>
+
+      <div class="btn-stack">
+        <button class="btn primary" id="downloadBtn">⬇ ドット絵をダウンロード(原寸)</button>
+        <button class="btn secondary" id="download1080Btn">🖼 1080×1080で書き出す</button>
+        <button class="btn plain" id="resetBtn">別の写真を選びなおす</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   ドット絵コンバーター(iOSスタイルUI / モバイル対応)
+   ---------------------------------------------------------
+   1) 正方形クロップ枠をドラッグ&サイズ調整して構図を決定
+   2) クロップ領域を平均化ダウンサンプル(ボックスフィルタ)
+   3) メディアンカット法で指定色数に減色 → 最寄り色へマッピング
+   4) 結果を実寸キャンバスに描き、PNG(原寸 / 1080×1080)で書き出す
+   ========================================================= */
+
+const dropzone   = document.getElementById("dropzone");
+const fileInput  = document.getElementById("fileInput");
+const stage      = document.getElementById("stage");
+const origCanvas = document.getElementById("origCanvas");
+const pixelPreview = document.getElementById("pixelPreview");
+const paletteEl  = document.getElementById("palette");
+const metaEl     = document.getElementById("meta");
+
+const colorCountInput = document.getElementById("colorCount");
+const colorCountVal   = document.getElementById("colorCountVal");
+const pixelSizeInput  = document.getElementById("pixelSize");
+const pixelSizeVal    = document.getElementById("pixelSizeVal");
+const cropSizeInput   = document.getElementById("cropSize");
+const cropSizeVal     = document.getElementById("cropSizeVal");
+
+let sourceImage = null;
+let outputCanvas = document.createElement("canvas");
+
+// 画像がキャンバス内に描かれる領域(表示座標系)
+let imgArea = null;
+// 正方形クロップ枠(表示座標系): {x, y, size}
+let crop = null;
+let dragging = false;
+let dragOffset = { x: 0, y: 0 };
+
+// ---- アップロードUI -------------------------------------------
+// dropzone は <label for="fileInput"> なので、タップで自動的に
+// 写真アプリ/カメラのピッカーが開く(iOSでも確実に動作する方式)
+["dragenter", "dragover"].forEach(evt =>
+  dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add("drag"); }));
+["dragleave", "drop"].forEach(evt =>
+  dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove("drag"); }));
+dropzone.addEventListener("drop", e => {
+  const file = e.dataTransfer.files[0];
+  if (file) loadFile(file);
+});
+fileInput.addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (file) loadFile(file);
+});
+
+function loadFile(file) {
+  if (!file.type.startsWith("image/")) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      sourceImage = img;
+      layoutImage();
+      drawOriginalWithOverlay();
+      stage.classList.add("show");
+      convert();
+      stage.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ---- 構図(正方形クロップ)レイアウト ----------------------------
+function layoutImage() {
+  const W = origCanvas.width, H = origCanvas.height;
+  const scale = Math.min(W / sourceImage.width, H / sourceImage.height);
+  const w = sourceImage.width * scale, h = sourceImage.height * scale;
+  imgArea = { x: (W - w) / 2, y: (H - h) / 2, w, h };
+  resetCrop();
+}
+
+function resetCrop() {
+  const pct = parseInt(cropSizeInput.value, 10) / 100;
+  const maxSide = Math.min(imgArea.w, imgArea.h);
+  const size = maxSide * pct;
+  crop = {
+    x: imgArea.x + (imgArea.w - size) / 2,
+    y: imgArea.y + (imgArea.h - size) / 2,
+    size,
+  };
+  clampCrop();
+}
+
+function clampCrop() {
+  crop.x = Math.min(Math.max(crop.x, imgArea.x), imgArea.x + imgArea.w - crop.size);
+  crop.y = Math.min(Math.max(crop.y, imgArea.y), imgArea.y + imgArea.h - crop.size);
+}
+
+function drawOriginalWithOverlay() {
+  const ctx = origCanvas.getContext("2d");
+  const W = origCanvas.width, H = origCanvas.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(sourceImage, imgArea.x, imgArea.y, imgArea.w, imgArea.h);
+
+  ctx.fillStyle = "rgba(28, 28, 30, 0.45)";
+  // 上下左右の暗幕(切り抜き範囲外を示す)
+  ctx.fillRect(imgArea.x, imgArea.y, imgArea.w, crop.y - imgArea.y);
+  ctx.fillRect(imgArea.x, crop.y + crop.size, imgArea.w, (imgArea.y + imgArea.h) - (crop.y + crop.size));
+  ctx.fillRect(imgArea.x, crop.y, crop.x - imgArea.x, crop.size);
+  ctx.fillRect(crop.x + crop.size, crop.y, (imgArea.x + imgArea.w) - (crop.x + crop.size), crop.size);
+
+  ctx.strokeStyle = "#007aff";
+  ctx.lineWidth = 2.5;
+  ctx.strokeRect(crop.x + 1.25, crop.y + 1.25, crop.size - 2.5, crop.size - 2.5);
+  // 三分割の補助線
+  ctx.strokeStyle = "rgba(255,255,255,0.55)";
+  ctx.lineWidth = 1;
+  for (let i = 1; i <= 2; i++) {
+    const gx = crop.x + (crop.size / 3) * i;
+    const gy = crop.y + (crop.size / 3) * i;
+    ctx.beginPath(); ctx.moveTo(gx, crop.y); ctx.lineTo(gx, crop.y + crop.size); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(crop.x, gy); ctx.lineTo(crop.x + crop.size, gy); ctx.stroke();
+  }
+}
+
+function canvasCoords(e) {
+  const rect = origCanvas.getBoundingClientRect();
+  const cx = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+  const cy = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+  return {
+    x: cx * (origCanvas.width / rect.width),
+    y: cy * (origCanvas.height / rect.height),
+  };
+}
+
+function insideCrop(p) {
+  return p.x >= crop.x && p.x <= crop.x + crop.size &&
+         p.y >= crop.y && p.y <= crop.y + crop.size;
+}
+
+// ---- ドラッグ操作(マウス / タッチ両対応) -----------------------
+function pointerDown(e) {
+  if (!sourceImage) return;
+  const p = canvasCoords(e);
+  if (insideCrop(p)) {
+    dragging = true;
+    dragOffset = { x: p.x - crop.x, y: p.y - crop.y };
+    origCanvas.classList.add("dragging");
+  }
+}
+function pointerMove(e) {
+  if (!dragging) return;
+  e.preventDefault();
+  const p = canvasCoords(e);
+  crop.x = p.x - dragOffset.x;
+  crop.y = p.y - dragOffset.y;
+  clampCrop();
+  drawOriginalWithOverlay();
+}
+function pointerUp() {
+  if (dragging) {
+    dragging = false;
+    origCanvas.classList.remove("dragging");
+    convert();
+  }
+}
+origCanvas.addEventListener("mousedown", pointerDown);
+origCanvas.addEventListener("mousemove", pointerMove);
+window.addEventListener("mouseup", pointerUp);
+origCanvas.addEventListener("touchstart", pointerDown, { passive: true });
+origCanvas.addEventListener("touchmove", pointerMove, { passive: false });
+window.addEventListener("touchend", pointerUp);
+
+cropSizeInput.addEventListener("input", () => {
+  cropSizeVal.textContent = cropSizeInput.value + "%";
+  if (!sourceImage) return;
+  const pct = parseInt(cropSizeInput.value, 10) / 100;
+  const maxSide = Math.min(imgArea.w, imgArea.h);
+  const size = maxSide * pct;
+  // 中心を保ったままサイズ変更
+  const cx = crop.x + crop.size / 2, cy = crop.y + crop.size / 2;
+  crop.size = size;
+  crop.x = cx - size / 2;
+  crop.y = cy - size / 2;
+  clampCrop();
+  drawOriginalWithOverlay();
+  convert();
+});
+
+// ---- 変換本体 ---------------------------------------------------
+function convert() {
+  if (!sourceImage) return;
+  const N = parseInt(pixelSizeInput.value, 10);
+  const K = parseInt(colorCountInput.value, 10);
+
+  // 1) クロップ領域を正方形ワーキングキャンバスへ描画
+  const work = renderCropToSquare(N);
+
+  // 2) N x N へ平均化ダウンサンプル(ボックスフィルタ)
+  const small = boxDownsample(work, N);
+
+  // 3) メディアンカットで K 色のパレットを作成
+  const pixels = [];
+  for (let i = 0; i < small.data.length; i += 4) {
+    pixels.push([small.data[i], small.data[i + 1], small.data[i + 2]]);
+  }
+  const palette = medianCutQuantize(pixels, K);
+
+  // 4) 各ピクセルを最寄りパレット色に置き換え
+  const out = new ImageData(N, N);
+  for (let i = 0; i < small.data.length; i += 4) {
+    const c = nearestColor([small.data[i], small.data[i + 1], small.data[i + 2]], palette);
+    out.data[i]     = c[0];
+    out.data[i + 1] = c[1];
+    out.data[i + 2] = c[2];
+    out.data[i + 3] = 255;
+  }
+
+  outputCanvas.width = N;
+  outputCanvas.height = N;
+  outputCanvas.getContext("2d").putImageData(out, 0, 0);
+
+  const pctx = pixelPreview.getContext("2d");
+  pctx.imageSmoothingEnabled = false;
+  pctx.clearRect(0, 0, pixelPreview.width, pixelPreview.height);
+  pctx.drawImage(outputCanvas, 0, 0, pixelPreview.width, pixelPreview.height);
+
+  renderPalette(palette);
+  metaEl.textContent = `${N} × ${N} px ・ パレット ${palette.length} 色`;
+}
+
+// クロップ領域(表示座標)を元画像座標に変換し、正方形キャンバスへ描画
+function renderCropToSquare(N) {
+  const baseSize = Math.max(N * 8, 256);
+  const work = document.createElement("canvas");
+  work.width = baseSize;
+  work.height = baseSize;
+  const wctx = work.getContext("2d");
+
+  const scaleToImg = sourceImage.width / imgArea.w; // 表示→元画像の倍率
+  const sx = (crop.x - imgArea.x) * scaleToImg;
+  const sy = (crop.y - imgArea.y) * scaleToImg;
+  const ssize = crop.size * scaleToImg;
+
+  wctx.drawImage(sourceImage, sx, sy, ssize, ssize, 0, 0, baseSize, baseSize);
+  return wctx.getImageData(0, 0, baseSize, baseSize);
+}
+
+// ボックスフィルタで N x N に縮小
+function boxDownsample(imgData, N) {
+  const baseSize = imgData.width;
+  const src = imgData.data;
+  const out = new ImageData(N, N);
+  const block = baseSize / N;
+  for (let oy = 0; oy < N; oy++) {
+    for (let ox = 0; ox < N; ox++) {
+      let r = 0, g = 0, b = 0, count = 0;
+      const x0 = Math.floor(ox * block), x1 = Math.floor((ox + 1) * block);
+      const y0 = Math.floor(oy * block), y1 = Math.floor((oy + 1) * block);
+      for (let y = y0; y < y1; y++) {
+        for (let x = x0; x < x1; x++) {
+          const idx = (y * baseSize + x) * 4;
+          r += src[idx]; g += src[idx + 1]; b += src[idx + 2];
+          count++;
+        }
+      }
+      const oidx = (oy * N + ox) * 4;
+      out.data[oidx]     = Math.round(r / count);
+      out.data[oidx + 1] = Math.round(g / count);
+      out.data[oidx + 2] = Math.round(b / count);
+      out.data[oidx + 3] = 255;
+    }
+  }
+  return out;
+}
+
+// メディアンカット法による減色
+function medianCutQuantize(pixels, maxColors) {
+  let buckets = [pixels.slice()];
+  while (buckets.length < maxColors) {
+    let bestIdx = -1, bestRange = -1, bestChannel = 0;
+    buckets.forEach((bucket, i) => {
+      if (bucket.length < 2) return;
+      for (let c = 0; c < 3; c++) {
+        let mn = 255, mx = 0;
+        for (const p of bucket) { if (p[c] < mn) mn = p[c]; if (p[c] > mx) mx = p[c]; }
+        const range = mx - mn;
+        if (range > bestRange) { bestRange = range; bestIdx = i; bestChannel = c; }
+      }
+    });
+    if (bestIdx === -1 || bestRange <= 0) break;
+    const bucket = buckets[bestIdx];
+    bucket.sort((a, b) => a[bestChannel] - b[bestChannel]);
+    const mid = Math.floor(bucket.length / 2);
+    buckets.splice(bestIdx, 1, bucket.slice(0, mid), bucket.slice(mid));
+  }
+  return buckets.filter(b => b.length).map(bucket => {
+    let r = 0, g = 0, b2 = 0;
+    for (const p of bucket) { r += p[0]; g += p[1]; b2 += p[2]; }
+    const n = bucket.length;
+    return [Math.round(r / n), Math.round(g / n), Math.round(b2 / n)];
+  });
+}
+
+function nearestColor(p, palette) {
+  let best = palette[0], bestD = Infinity;
+  for (const c of palette) {
+    const d = (p[0]-c[0])**2 + (p[1]-c[1])**2 + (p[2]-c[2])**2;
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  return best;
+}
+
+function renderPalette(palette) {
+  paletteEl.innerHTML = "";
+  const sorted = palette.slice().sort((a, b) =>
+    (a[0]*0.3+a[1]*0.59+a[2]*0.11) - (b[0]*0.3+b[1]*0.59+b[2]*0.11));
+  sorted.forEach(c => {
+    const sw = document.createElement("div");
+    sw.className = "sw";
+    sw.style.background = `rgb(${c[0]},${c[1]},${c[2]})`;
+    sw.title = `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+    paletteEl.appendChild(sw);
+  });
+}
+
+// ---- ダウンロード(原寸) ----------------------------------------
+document.getElementById("downloadBtn").addEventListener("click", () => {
+  triggerDownload(outputCanvas, `pixel-art-${outputCanvas.width}x${outputCanvas.height}.png`);
+});
+
+// ---- ダウンロード(1080x1080 / ニアレストネイバーで拡大) ----------
+document.getElementById("download1080Btn").addEventListener("click", () => {
+  const SIZE = 1080;
+  const big = document.createElement("canvas");
+  big.width = SIZE;
+  big.height = SIZE;
+  const bctx = big.getContext("2d");
+  bctx.imageSmoothingEnabled = false;
+  bctx.drawImage(outputCanvas, 0, 0, SIZE, SIZE);
+  triggerDownload(big, `pixel-art-1080x1080.png`);
+});
+
+function triggerDownload(canvas, filename) {
+  const a = document.createElement("a");
+  a.download = filename;
+  a.href = canvas.toDataURL("image/png");
+  a.click();
+}
+
+document.getElementById("resetBtn").addEventListener("click", () => {
+  sourceImage = null;
+  stage.classList.remove("show");
+  fileInput.value = "";
+  dropzone.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
+// ---- スライダー -------------------------------------------------
+colorCountInput.addEventListener("input", () => {
+  colorCountVal.textContent = colorCountInput.value;
+  convert();
+});
+pixelSizeInput.addEventListener("input", () => {
+  pixelSizeVal.textContent = pixelSizeInput.value;
+  convert();
+});
+</script>
+</body>
+</html>
